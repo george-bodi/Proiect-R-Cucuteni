@@ -160,7 +160,7 @@ manova_cuc <- manova(cbind(df_cuc_3_clustere$Ti_avg, df_cuc_3_clustere$Mn_avg, d
 summary(manova_cuc)
 summary.aov(manova_cuc) # variația pe titaniu nu e diferită
 
-library(effectsize)
+#library(effectsize)
 eta_squared(manova_cuc) # dacă valoarea este mai mare de 0.14, mărimea efectului este mare
 
 library(MASS)
