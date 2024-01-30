@@ -10,6 +10,9 @@ library(nlme)
 library(psych)
 library(corrplot)
 library(htmlwidgets)
+library(MASS)
+library(effectsize)
+
 
 Cucuteni_pXRF <- read_excel("Cucuteni_pXRF.xlsx", sheet = "toate fara 15 RSD>10")
 
@@ -160,10 +163,9 @@ manova_cuc <- manova(cbind(df_cuc_3_clustere$Ti_avg, df_cuc_3_clustere$Mn_avg, d
 summary(manova_cuc)
 summary.aov(manova_cuc) # variația pe titaniu nu e diferită
 
-#library(effectsize)
+library(effectsize)
 eta_squared(manova_cuc) # dacă valoarea este mai mare de 0.14, mărimea efectului este mare
 
-library(MASS)
 
 #elemente <- cbind(df_cuc_3_clustere$Ti_avg, df_cuc_3_clustere$Mn_avg, df_cuc_3_clustere$Zn_avg, df_cuc_3_clustere$Rb_avg, df_cuc_3_clustere$Zr_avg)
 
@@ -180,7 +182,7 @@ plot(cuc_rare_lda)
 
 ggplot(lda_df) +
   geom_point(aes(x = lda.LD1, y = lda.LD2, color = clusters), size = 4) +
-  theme_classic()
+  theme_light()
 
 
 model_tip=glm(Ti_avg+Mn_avg+Zn_avg+Rb_avg+Zr_avg~TIP, data = df_cuc_3_clustere) #nu exista o diferenta reala - compozitia chimica nu variaza in functie de tipul ceramicii
