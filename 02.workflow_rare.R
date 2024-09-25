@@ -77,41 +77,41 @@ cluster_tendency_log
 ##### clustere ierarhice aglomerative ############
 
 
-clust_cuc_rare_hclust_indet <- eclust(df_cuc_rare_log,                       # cerem calcularea clusterelor
-                                FUNcluster = "agnes",             # specificam utilizarea unui algoritm aglomerativ ierarhic
-                                hc_metric = "pearson",         # cerem utilizarea matricei de similaritate 
-                                hc_method = "average")           # specificam tipul de disimilaritate utilizat
+clust_cuc_rare_hclust_indet <- eclust(df_cuc_rare_log,        # cerem calcularea clusterelor
+                                FUNcluster = "agnes",         # specificam utilizarea unui algoritm aglomerativ ierarhic
+                                hc_metric = "pearson",        # cerem utilizarea matricei de similaritate 
+                                hc_method = "average")        # specificam tipul de disimilaritate utilizat
 clusts_indet <- fviz_dend(clust_cuc_rare_hclust_indet)
 clusts_indet
 
-clust_cuc_rare_hclust_tests <- eclust(df_cuc_rare_log,                       # cerem calcularea clusterelor
-                                      FUNcluster = "agnes",             # specificam utilizarea unui algoritm aglomerativ ierarhic
-                                      k=4,      
-                                      hc_metric = "pearson",         # cerem utilizarea matricei de similaritate 
-                                      hc_method = "average")           # specificam tipul de disimilaritate utilizat
+clust_cuc_rare_hclust_tests <- eclust(df_cuc_rare_log,        # cerem calcularea clusterelor
+                                      FUNcluster = "agnes",   # specificam utilizarea unui algoritm aglomerativ ierarhic
+                                      k = 4,      
+                                      hc_metric = "pearson",  # cerem utilizarea matricei de similaritate 
+                                      hc_method = "average")  # specificam tipul de disimilaritate utilizat
 
 fviz_silhouette(clust_cuc_rare_hclust_tests)       
 clusts_tests <- fviz_dend(clust_cuc_rare_hclust_tests)
 clusts_tests
 
 
-export_clus_rare <-clust_cuc_rare_hclust_tests$cluster
+export_clus_rare <- clust_cuc_rare_hclust_tests$cluster
 df_cuc_rare$clusters <- as.factor(export_clus_rare)
 
 
 pca_cuc_rare <- PCA(df_cuc_rare[,3:7], graph = FALSE)
 summary(pca_cuc_rare)
 
-graf_pca_ind_rare <- fviz_pca_biplot(pca_cuc_rare, addEllipses=TRUE, ellipse.level=0.65,
-                                     col.ind =df_cuc_rare$clusters,                   # cerem colorarea indivizilor in functie de cauza mortii
+graf_pca_ind_rare <- fviz_pca_biplot(pca_cuc_rare, addEllipses = TRUE, ellipse.level = 0.65,
+                                     col.ind = df_cuc_rare$clusters,                   # cerem colorarea indivizilor in functie de cauza mortii
                                      #geom.ind = "point",
                                      col.var = "black",                       # cerem cerem reprezentarea variabilelor cu negru
                                      repel = TRUE,                            # cerem ca numele indivizilor sa nu se suprapuna
                                      title = "Overlay of clustering results over PCA",
                                      legend.title = "Clusters")           # specificam titlul legendei
 graf_pca_ind_rare
-graf_pca_ind_rare+
-  geom_text(label=df_cuc_rare$TIP, hjust=0, nudge_y = -0.05, check_overlap = TRUE)
+graf_pca_ind_rare +
+  geom_text(label = df_cuc_rare$TIP, hjust = 0, nudge_y = -0.05, check_overlap = TRUE)
 
 #########RARE PCA 3d---------
 
@@ -122,21 +122,20 @@ graf_pca_ind_rare+
 scores_rare = as.data.frame(pca_cuc_rare$ind)
 
 plot3d(scores_rare[,1:3], 
-       size=10,
+       size = 10,
        col = df_cuc_rare$clusters)
 options(rgl.printRglwidget = TRUE)
 
 text3d(scores_rare[,1:3],
-       texts=df_cuc_rare$TIP, 
-       cex= 1, pos=3)
+       texts = df_cuc_rare$TIP, 
+       cex = 1, pos = 3)
 text3d(scores_rare[,1:3],
-       texts=df_cuc_rare$SAMPLE, 
-       cex= 1, pos=1)
-
+       texts = df_cuc_rare$SAMPLE, 
+       cex = 1, pos = 1)
 text3d(pca_cuc_rare$var$coord[,1:3], 
-       texts=rownames(pca_cuc_rare$var$coord[,1:3]), 
-       col="red", 
-       cex=0.8)
+       texts = rownames(pca_cuc_rare$var$coord[,1:3]), 
+       col = "red", 
+       cex = 0.8)
 #legend3d("topright", legend = c('1', '2'), pch = 16, col = rainbow(2), cex=1, inset=c(0.02))
 
 coords <- NULL
@@ -147,8 +146,8 @@ for (i in 1:nrow(pca_cuc_rare$var$coord)) {
 }
 
 lines3d(coords, 
-        col="red", 
-        lwd=1)
+        col = "red", 
+        lwd = 1)
 
 rgl.snapshot('3dplot_pca_rare2.png', fmt = 'png')
 

@@ -15,137 +15,37 @@ library(janitor)
 library(factoextra)
 library(FactoMineR)
 library(rgl)
-
+library(viridis)
+library(cluster)
+library(PerformanceAnalytics)
+library(cluster)
+library(ggord)
+library(MASS)
 theme_set(theme_light())
+set.seed(2024)
 
 Cucuteni_pXRF <- read_excel("Cucuteni_pXRF.xlsx", sheet = "toate fara 15 RSD>10")
 Cucuteni_pXRF <- as_tibble(Cucuteni_pXRF) |> 
   mutate_if(is.character, as.factor) |> 
   mutate_if(is.double, as.numeric)
 
-df <- Cucuteni_pXRF[-15,] |> #sample 15 eliminated due to errors in the analysis process
+df <- Cucuteni_pXRF |> 
 as_tibble()
-
-View(df)
-
-df_long <- 
-  Cucuteni_pXRF |> 
-  pivot_longer(
-    cols = -c("SAMPLE", "TIP"),
-    names_to = "Elemente",
-    values_to = "Procentaje"
-    ) |> 
-  unite("Sample_Element",
-        c("SAMPLE", "Elemente"),
-        sep = ".",
-        remove = F) |> 
-  mutate_if(is.character, as.factor) |> 
-  as_tibble()
-
-cors <- df_long |> 
-  group_by(SAMPLE) |> 
-  pairwise_cor(Elemente, Procentaje, sort = TRUE)
-  
-cors_tibble <- 
-  cors |> 
-  as_tibble() |> 
-  distinct(item1, .keep_all = T) |> 
-  unite(Cor_Pairs,
-        c(item1, item2),
-        sep = "_vs_",
-        remove = F
-        ) |>
-  mutate_if(is.character, as.factor) |> 
-  top_n(20, abs(correlation)) |> 
-  mutate(Cor_Pairs = fct_reorder(Cor_Pairs, correlation))
-
-  ggplot(cors_tibble, aes(correlation, Cor_Pairs)) +
-  geom_point()
 ```
 
-Exploratory analysis in view of clustering
+Remove P from analysis per Hunt 2015
 
 ```{r}
-pca_df <- df[,3:14] |> 
-  PCA(scale.unit = T)
+df <- df |> dplyr::select(!c(P_avg))  
 
-eigen_values <- pca_df$eig |> 
-  as_tibble() |> 
-  rownames_to_column() |> 
-  clean_names() |> 
-  arrange(desc(percentage_of_variance)) 
+pca_df <- PCA(df[, 3:13], scale.unit = T)
 
-eigen_values
+summary(pca_df)
 
- eigen_values |> 
-    top_n(4, percentage_of_variance) |> 
-  ggplot(aes(rowname, percentage_of_variance)) +
-  geom_col()
+library(psych)
+outlier(df[,3:13])
 
-cors_var <- pca_df$var$cor |> 
-  as.data.frame() |> 
-  rownames_to_column() |> 
-  mutate_if(is.character, as.factor) 
-
-graph_dim1_cors <- 
-  cors_var |> 
-  mutate(rowname = fct_reorder(rowname, Dim.1)) |> 
-  ggplot(aes(Dim.1, rowname)) +
-  geom_col()
-graph_dim1_cors
-
-graph_dim2_cors <- 
-  cors_var |> 
-  mutate(rowname = fct_reorder(rowname, Dim.2)) |> 
-  ggplot(aes(Dim.2, rowname)) +
-  geom_col()
-graph_dim2_cors
-
-graph_dim3_cors <- 
-  cors_var |> 
-  mutate(rowname = fct_reorder(rowname, Dim.3)) |> 
-  ggplot(aes(Dim.3, rowname)) +
-  geom_col()
-graph_dim3_cors
-           
-contrib_var_selection <- pca_df$var$contrib |> 
-  as.data.frame() |> 
-  rownames_to_column() |> 
-  mutate_if(is.character, as.factor) 
-
-graph_dim1_contrib <- 
-  contrib_var_selection |> 
-  mutate(rowname = fct_reorder(rowname, Dim.1)) |> 
-  ggplot(aes(Dim.1, rowname)) +
-  geom_col()
-graph_dim1_contrib
-
-graph_dim2_contrib <- 
-  contrib_var_selection |> 
-  mutate(rowname = fct_reorder(rowname, Dim.2)) |> 
-  ggplot(aes(Dim.2, rowname)) +
-  geom_col()
-graph_dim2_contrib
-
-graph_dim3_contrib <- 
-  contrib_var_selection |> 
-  mutate(rowname = fct_reorder(rowname, Dim.3)) |> 
-  ggplot(aes(Dim.3, rowname)) +
-  geom_col()
-graph_dim3_contrib
-
-```
-
-Remove major elements from analysis
-
-```{r}
-df_selection <- 
-  df |> 
-  select(!c(Al2O4_avg, SiO3_avg, Ca_avg, Fe_avg)
-         ) 
-df_selection
-
-pca_df_selection <- PCA(df_selection[, 3:10], scale.unit = T)
+df_selection <- df[-c(1, 7, 15:17),]
 
 ##Variație pe dimensiuni---
 
@@ -156,14 +56,12 @@ eigen_values_selection <- pca_df_selection$eig |>
   arrange(desc(percentage_of_variance)) |> 
   as_tibble()
 
-eigen_values_selection
-
-  eigen_values_selection |> 
+eigen_values_selection |> 
   top_n(4, percentage_of_variance) |> 
   ggplot(aes(rowname, percentage_of_variance)) +
   geom_col()
 
-  ##Corelații variabile---
+##Corelații variabile---
   
 cors_var_selection <- pca_df_selection$var$cor |> 
   as.data.frame() |> 
@@ -171,33 +69,25 @@ cors_var_selection <- pca_df_selection$var$cor |>
   mutate_if(is.character, as.factor) |> 
   as_tibble()
 
-graph_dim1_cors_selection <- 
-  cors_var_selection |> 
+cors_var_selection |> 
   mutate(rowname = fct_reorder(rowname, Dim.1)) |> 
   ggplot(aes(Dim.1, rowname)) +
   geom_col()
-graph_dim1_cors_selection
 
-graph_dim2_cors_selection <- 
-  cors_var_selection |> 
+cors_var_selection |> 
   mutate(rowname = fct_reorder(rowname, Dim.2)) |> 
   ggplot(aes(Dim.2, rowname)) +
   geom_col()
-graph_dim2_cors_selection
 
-graph_dim3_cors_selection <- 
-  cors_var_selection |> 
+cors_var_selection |> 
   mutate(rowname = fct_reorder(rowname, Dim.3)) |> 
   ggplot(aes(Dim.3, rowname)) +
   geom_col()
-graph_dim3_cors_selection
 
-graph_dim4_cors_selection <- 
-  cors_var_selection |> 
+cors_var_selection |> 
   mutate(rowname = fct_reorder(rowname, Dim.4)) |> 
   ggplot(aes(Dim.4, rowname)) +
   geom_col()
-graph_dim4_cors_selection
 
 ##Contribuții variabile---
 
@@ -205,78 +95,113 @@ contrib_var_selection <- pca_df_selection$var$contrib |>
   as.data.frame() |> 
   mutate_if(is.character, as.factor) |> 
   rownames_to_column() |> 
-  as.tibble()
+  as_tibble() 
 
-graph_dim1_contrib_selection <- 
-  contrib_var_selection |> 
+
+contrib_var_selection |> 
   mutate(rowname = fct_reorder(rowname, Dim.1, .desc = T)) |> 
   ggplot(aes(rowname, Dim.1)) +
-  geom_col()
-graph_dim1_contrib_selection
+  geom_col() 
 
-graph_dim2_contrib_selection <- 
-  contrib_var_selection |> 
+contrib_var_selection |> 
   mutate(rowname = fct_reorder(rowname, Dim.2, .desc = T)) |> 
   ggplot(aes(rowname, Dim.2)) +
   geom_col()
-graph_dim2_contrib_selection
 
-graph_dim3_contrib_selection <- 
-  contrib_var_selection |> 
+
+contrib_var_selection |> 
   mutate(rowname = fct_reorder(rowname, Dim.3, .desc = T)) |> 
   ggplot(aes(rowname, Dim.3)) +
   geom_col()
-graph_dim3_contrib_selection
 
-graph_dim4_contrib_selection <- 
-  contrib_var_selection |> 
-  mutate(rowname = fct_reorder(rowname, Dim.3, .desc = T)) |> 
-  ggplot(aes(rowname, Dim.3)) +
-  geom_col()
-graph_dim4_contrib_selection
+
+
+##Contribuții indivizi
+
+contrib_ind_selection <- 
+  pca_df_selection$ind |> 
+  as.data.frame() |> 
+  mutate_if(is.character, as.factor) |> 
+  rownames_to_column() |> 
+  as.tibble()
+
+contrib_ind_selection |> 
+  mutate(rowname = fct_reorder(rowname, coord.Dim.1, .desc = T)) |> 
+  ggplot(aes(coord.Dim.1, rowname, fill = df_selection$clusters)) +
+  geom_col() +
+  scale_fill_viridis_d()
+
+contrib_ind_selection |> 
+  mutate(rowname = fct_reorder(rowname, coord.Dim.2, .desc = T)) |> 
+  ggplot(aes(coord.Dim.2, rowname, fill = df_selection$clusters)) +
+  geom_col() +
+  scale_fill_viridis_d()
+
+
+contrib_ind_selection |> 
+  mutate(rowname = fct_reorder(rowname, coord.Dim.3, .desc = T)) |> 
+  ggplot(aes(coord.Dim.3, rowname, fill = df_selection$clusters)) +
+  geom_col() +
+  scale_fill_viridis_d()
 
 ```
 
-Clusters
+Clusters without outliers
 
 ```{r}
 gradient_col <-  list(low = "black", mid = "white",high = "red")
 
-pca_df_ind <- as.data.frame(pca_df$ind)
-pca_selection <- as.data.frame(pca_df_selection$ind)
 
-cluster_tendency_pca_df <- get_clust_tendency(pca_df_ind[,1:3], n = 10, gradient = gradient_col)      
-cluster_tendency_pca_df #0.58
-
-cluster_tendency_pca_selection <- get_clust_tendency(pca_selection[,1:3], n = 10, gradient = gradient_col)      
-cluster_tendency_pca_selection #0.58
+df_centr_selection <- df_selection |> 
+ as.data.frame(scale(df_selection[,3:13], scale = T, center = T)) |> 
+  as_tibble()
 
 
-set.seed(2024)
+cluster_tendency_df_centr_selection <- get_clust_tendency(df_centr_selection[,3:13], 
+                                                          n = 13, 
+                                                          gradient = gradient_col)      
+cluster_tendency_df_centr_selection #0.68
 
-clust_tests <- eclust(pca_df_ind[,1:3],
-                               FUNcluster = "agnes",
-                               k = 5,
-                               hc_metric = "pearson",
-                               hc_method = "average"
+
+cluster_tendency_pca <- get_clust_tendency(pca_df_selection$ind$coord[,1:5], 
+                                                          n = 13, 
+                                                          gradient = gradient_col)      
+cluster_tendency_pca #0.66
+
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+ac <- function(x) {
+agnes(df_centr_selection, method = x)$ac
+}
+linkages_optimum <- sapply(m, ac)
+
+fviz_nbclust(df_centr_selection, FUN = hcut, method = "wss")
+fviz_nbclust(df_centr_selection, FUN = hcut, method = "silhouette")
+
+
+
+clust_df_centr_selection_tests <- eclust(df_centr_selection[,3:13],
+                               FUNcluster = "diana",
+                               k = 2,
+                               hc_metric = "spearman",
+                               hc_method = "ward.D2"
                                )
 
-fviz_silhouette(clust_tests) # 2clust=0.7; 3clust=0.71_wrong; 4clust=0.74_wrong;
-                                              #5clust=0.76; 6clust=0.69_wrong; 7clust=0.73_wrong; 8clust=0.7; 9clust=0.72
-dendrogram_tests <- fviz_dend(clust_tests)
-dendrogram_tests
+fviz_dend(clust_df_centr_selection_tests)
+fviz_silhouette(clust_df_centr_selection_tests) 
+fviz_cluster(clust_df_centr_selection_tests, repel = T)
 
-
-export_clus <- clust_tests$cluster
-df$clusters <- as.factor(export_clus)
-View(df)
+export_clus <- clust_df_centr_selection_tests$cluster
+df_selection$clusters <- as.factor(export_clus)
 ```
 
 Clusters visualisation
 
 ```{r}
-
-graf_pca_ind_clust <- fviz_pca_biplot(pca_df, 
+pca_df_selection <- PCA(df_selection[ ,3:13],
+                        scale.unit = T)
+graf_pca_ind_clust <- fviz_pca_biplot(pca_df_selection,
+                                      axes = c(1,2),
                                       addEllipses = F, 
                                       ellipse.level = 0.65,
                                      col.ind = df_selection$clusters,
@@ -287,41 +212,133 @@ graf_pca_ind_clust <- fviz_pca_biplot(pca_df,
                                      legend.title = "Clusters")
 graf_pca_ind_clust
 
-scores_selection = as.data.frame(pca_df$ind)
 
-plot3d(scores_selection[,1:3], 
-       size = 10,
-       col = df_selection$clusters)
-options(rgl.printRglwidget = TRUE)
-
-text3d(scores_selection[,1:3],
-       texts = df_selection$TIP, 
-       cex = 1, pos = 3)
-text3d(scores_selection[,1:3],
-       texts = export_clus, 
-       cex = 1, pos = 1)
-text3d(scores_selection[,1:3],
-       texts = rownames(df_selection), 
-       cex = 1, pos = 2)
-text3d(pca_final$var$coord[,1:3], 
-       texts = rownames(pca_final$var$coord[,1:3]), 
-       col = "red", 
-       cex = 0.8)
-
-coords <- NULL
-for (i in 1:nrow(pca_final$var$coord)) {
-  coords <- rbind(coords, 
-                  rbind(c(0,0,0),
-                        pca_final$var$coord[i,1:3]))
-}
-
-lines3d(coords, 
-        col = "red", 
-        lwd = 1)
-
-rgl.snapshot('3dplot_pca_rare2.png', fmt = 'png')
-
-
+scores_selection = as.data.frame(pca_df_selection$ind)
 ```
 
 
+lda to confirm clustering
+
+```{r}
+df_confirmation <-  
+  df_selection |> 
+  dplyr::select(!c(TIP, SAMPLE))
+
+verification_lda <- lda(df_confirmation$clusters~., df_confirmation, CV = F)
+verification_lda
+
+lda_df <- data.frame(
+  clusters = df_confirmation[, "clusters"],
+  lda = predict(verification_lda)$x
+)
+lda_df
+
+predict_lda <- predict(verification_lda)
+
+predict_df_lda <- 
+  as_tibble(predict_lda$x)
+
+verification_lda_cross_valid <- lda(df_confirmation$clusters~., df_confirmation, CV = T)
+
+missclasification_lda_cross <- table(df_confirmation$clusters, verification_lda_cross_valid$class)
+sum(diag(missclasification_lda_cross))/sum(missclasification_lda_cross) * 100
+
+plot(verification_lda)
+```
+
+Clusters with outliers
+
+```{r}
+df_centr <- df |> 
+ as.data.frame(scale(df[,3:13], scale = T, center = T)) |> 
+  as_tibble()
+
+
+cluster_tendency_df_centr <- get_clust_tendency(df_centr[,3:13], 
+                                                          n = 11, 
+                                                          gradient = gradient_col)      
+cluster_tendency_df_centr #0.68
+
+
+cluster_tendency_pca <- get_clust_tendency(pca_df_selection$ind$coord[,1:5], 
+                                                          n = 13, 
+                                                          gradient = gradient_col)      
+cluster_tendency_pca #0.66
+
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+ac <- function(x) {
+agnes(df_centr, method = x)$ac
+}
+linkages_optimum <- sapply(m, ac)
+
+fviz_nbclust(df_centr, FUN = hcut, method = "wss")
+fviz_nbclust(df_centr, FUN = hcut, method = "silhouette")
+
+
+
+clust_df_centr <- eclust(df_centr[,3:13],
+                               FUNcluster = "diana",
+                               k = 2,
+                               hc_metric = "spearman",
+                               hc_method = "ward.D2"
+                               )
+
+fviz_dend(clust_df_centr)
+fviz_silhouette(clust_df_centr) 
+fviz_cluster(clust_df_centr, repel = T)
+
+export_clus <- clust_df_centr$cluster
+df$clusters <- as.factor(export_clus)
+```
+
+Clusters visualisation
+
+```{r}
+pca_df <- PCA(df[ ,3:13],
+                        scale.unit = T)
+fviz_pca_biplot(pca_df_selection,
+                                      axes = c(1,2),
+                                      addEllipses = F, 
+                                      ellipse.level = 0.65,
+                                     col.ind = df_selection$clusters,
+                                     #geom.ind = "point",
+                                     col.var = "black",
+                                     repel = TRUE,
+                                     title = "Overlay of clustering results over PCA",
+                                     legend.title = "Clusters")
+graf_pca_ind_clust
+
+
+scores_selection = as.data.frame(pca_df_selection$ind)
+```
+
+
+lda to confirm clustering
+
+```{r}
+df_confirmation <-  
+  df_selection |> 
+  dplyr::select(!c(TIP, SAMPLE))
+
+verification_lda <- lda(df_confirmation$clusters~., df_confirmation, CV = F)
+verification_lda
+
+lda_df <- data.frame(
+  clusters = df_confirmation[, "clusters"],
+  lda = predict(verification_lda)$x
+)
+lda_df
+
+predict_lda <- predict(verification_lda)
+
+predict_df_lda <- 
+  as_tibble(predict_lda$x)
+
+verification_lda_cross_valid <- lda(df_confirmation$clusters~., df_confirmation, CV = T)
+
+missclasification_lda_cross <- table(df_confirmation$clusters, verification_lda_cross_valid$class)
+sum(diag(missclasification_lda_cross))/sum(missclasification_lda_cross) * 100
+
+plot(verification_lda)
+```

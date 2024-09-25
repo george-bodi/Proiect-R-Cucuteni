@@ -1,0 +1,171 @@
+---
+title: "workflow"
+output: word_document
+date: "2024-08-09"
+---
+
+```{r setup, include=FALSE}
+library(readxl)
+library(FactoMineR)
+library(factoextra)
+library(NbClust)
+library(rgl)
+library(pixiedust)
+library(multcomp)
+library(car)
+library(nlme)
+library(psych)
+library(corrplot)
+library(htmlwidgets)
+library(MASS)
+library(effectsize)
+library(MASS)
+library(cluster)
+library(fpc)
+library(tidyverse)
+library(psych)
+
+set.seed(2024)
+theme_set(theme_light())
+Cucuteni_pXRF <- read_excel("Cucuteni_pXRF.xlsx", sheet = "toate fara 15 RSD>10")
+```
+
+Remove from analysis the elements that are freely circulating through soil (Phosphorus, Potassium and Calcium)
+
+```{r setup, include=FALSE}
+df_cuc <- as.data.frame(Cucuteni_pXRF)
+df_cuc[,1:2] <- lapply(df_cuc[,1:2], as.factor)
+df_cuc_rare <- df_cuc[,c(1:4,8:14)]
+```
+
+EDA
+
+```{r}
+library(GGally)
+ggpairs(df_cuc_rare, columns = 4:11)
+
+```
+
+
+
+Multivariate Outlier Analysis and Elimination using Local Outlier Factor
+
+
+```{r}
+library(dbscan)
+lof_scores <- dbscan::lof(scale(df_cuc_rare[,3:11], center = T, scale = T), minPts = 5)
+summary(lof_scores)
+df_cuc_rare$lof_scores <- lof_scores
+ggplot(df_cuc_rare, aes(x = 1:nrow(df_cuc_rare), y = lof_scores)) +
+  geom_point() + 
+  geom_text(aes(label = SAMPLE, color = TIP)) +
+  theme_light()
+```
+From the graph it is clear that samples 01, 16,17 and 19 are global outliers and will be removed from the analysis as they may impact the clustering results
+
+```{r}
+threshold <- 1.5
+df_cuc_rare$outlier <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
+df_cuc_rare <- filter(df_cuc_rare, !df_cuc_rare$outlier == "Outlier")
+ggpairs(df_cuc_rare, columns = 4:11)
+
+```
+
+Clustering
+
+Calculate clustering tendency
+
+```{r}
+gradient_col <- list(low = "black", mid = "white",high = "red")
+
+
+df_cuc_rare_centr_clust <- as.data.frame(scale(df_cuc_rare[,3:11],
+                                               center = TRUE,
+                                               scale = TRUE)
+                                         )      
+
+library(hopkins)
+hopkins::hopkins(df_cuc_rare_centr_clust, m = nrow(df_cuc_rare) - 2)
+
+fviz_dist(dist(df_cuc_rare_centr_clust), show_labels = T) +
+  labs(title = "Clustering Tendency")
+```
+
+Agglomerative Hierachical Clustering
+
+```{r}
+clust_cuc_rare_hclust_indet <- eclust(df_cuc_rare_centr_clust,                       
+                                      FUNcluster = "agnes",             
+                                      hc_metric = "euclidean",         
+                                      hc_method = "ward.D2")           
+clusts_indet <- fviz_dend(clust_cuc_rare_hclust_indet)
+clusts_indet
+```
+
+The dendogram indicates that the greatest distances between points exist if these are grouped in three clusters
+
+```{r}
+clust_cuc_rare_hclust_tests <- eclust(df_cuc_rare_centr_clust,                       
+                                      FUNcluster = "agnes",             
+                                      k = 3,      
+                                      hc_metric = "euclidean",         
+                                      hc_method = "ward.D2")           
+
+fviz_silhouette(clust_cuc_rare_hclust_tests)       
+clusts_tests <- fviz_dend(clust_cuc_rare_hclust_tests, rect = T, rect_fill = T)
+clusts_tests
+
+```
+
+The silhouette index is low and therefore further verification of clustering accuracy is necessary
+
+Completion of data with the cluster assignments
+
+```{r}
+export_clus_rare <- clust_cuc_rare_hclust_tests$cluster
+df_cuc_rare$clusters <- as.factor(export_clus_rare)
+```
+
+
+Permutation test for linear model
+
+```{r}
+library(lmPerm)
+model <- aovp(cbind(Al2O4_avg, SiO3_avg, Mn_avg, Fe_avg, Zn_avg, Rb_avg, Sr_avg, Zr_avg) ~ clusters,
+             seqs = T,
+             Ca = 1e-3,
+             maxIter = 1e7,
+             data = df_cuc_rare, 
+             perm = "Prob")
+
+
+summary.aov(model)
+
+model3 <- aovp(Al2O4_avg + SiO3_avg + Ti_avg + Mn_avg + Fe_avg + Zn_avg + Rb_avg + Sr_avg + Zr_avg ~ clusters,
+              seqs = TRUE,
+              Ca = 1e-3,
+              maxIter = 1e7,
+               data = df_cuc_rare, 
+               perm = "Prob")
+summary.aovp(model3)
+```
+
+
+
+PCA
+
+```{r}
+pca_cuc_rare <- PCA(df_cuc_rare[,3:11], graph = FALSE)
+summary(pca_cuc_rare)
+
+fviz_pca_biplot(pca_cuc_rare, addEllipses = F, ellipse.level = 0.95,
+                                     col.ind = df_cuc_rare$clusters,                   
+                                     geom.ind = "point",
+                                     col.var = "black",                       
+                                     repel = TRUE,                            
+                                     title = "Overlay of clustering results over PCA",
+                                     legend.title = "Clusters") + 
+  geom_text(label = df_cuc_rare$TIP, hjust = 0, nudge_y = -0.05, check_overlap = TRUE)
+```
+
+
