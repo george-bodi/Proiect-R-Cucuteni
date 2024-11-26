@@ -45,6 +45,7 @@ Remove from analysis the elements that are troublesome for quantitative analysis
 df_cuc <- as.data.frame(Cucuteni_pXRF)
 df_cuc[,1:2] <- lapply(df_cuc[,1:2], as.factor)
 df_cuc_rare <- df_cuc[,c(1:4, 6:14)]
+
 ```
 
 #EDA
@@ -55,10 +56,11 @@ ggpairs(df_cuc_rare, columns = 3:13)
 
 ```
 
-Following EDA we will also eliminate Al due to its high correlation with Ti and Fe, and K, due to its high correlation with Rubidium. In this last case, we chose to eliminate K also due the possibility of contamination (Potassium per Frankel and Webb JAS 2012)
+Following EDA we will also eliminate Al due to its high correlation with Ti, Fe, and Zn, and K, due to its high correlation with Rubidium and Si. In this last case, we chose to eliminate K also due the possibility of contamination (Potassium per Frankel and Webb JAS 2012)
 
 ```{r}
 df_cuc_rare <- df_cuc_rare[, c(1:2, 4, 6:13)]
+df_cuc_check_point <- df_cuc_rare
 ```
 
 
@@ -69,7 +71,7 @@ df_cuc_rare <- df_cuc_rare[, c(1:2, 4, 6:13)]
 
 ```{r}
 library(dbscan)
-lof_scores <- dbscan::lof(scale(df_cuc_rare[,3:13], center = T, scale = T), minPts = 5)
+lof_scores <- dbscan::lof(scale(df_cuc_rare[,3:11], center = T, scale = T), minPts = 5)
 summary(lof_scores)
 df_cuc_rare$lof_scores <- lof_scores
 ggplot(df_cuc_rare, aes(x = 1:nrow(df_cuc_rare), y = lof_scores)) +
@@ -84,7 +86,7 @@ threshold <- 1.3
 df_cuc_rare$outlier <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
 df_cuc_rare_with_outliers <- df_cuc_rare
 df_cuc_rare <- filter(df_cuc_rare, !df_cuc_rare$outlier == "Outlier")
-ggpairs(df_cuc_rare, columns = 3:13)
+ggpairs(df_cuc_rare, columns = 3:11)
 
 ```
 
@@ -96,10 +98,13 @@ ggpairs(df_cuc_rare, columns = 3:13)
 gradient_col <- list(low = "black", mid = "white",high = "red")
 
 
-df_cuc_rare_centr_clust <- as.data.frame(scale(df_cuc_rare[,3:13],
+df_cuc_rare_centr_clust <- as.data.frame(scale(df_cuc_rare[,3:11],
                                                center = TRUE,
                                                scale = TRUE)
-                                         )      
+                                         )
+samples <- df_cuc_rare$SAMPLE
+rownames(df_cuc_rare_centr_clust) <- samples
+
 
 library(hopkins)
 hopkins::hopkins(df_cuc_rare_centr_clust, m = nrow(df_cuc_rare) - 2)
@@ -117,9 +122,18 @@ clust_cuc_rare_hclust_indet <- eclust(df_cuc_rare_centr_clust,
                                       hc_method = "ward.D2")           
 clusts_indet <- fviz_dend(clust_cuc_rare_hclust_indet)
 clusts_indet
+
+library(clValid)
+distance_matrix <- distance(df_cuc_rare_centr_clust)
+distance_matrix <- as.matrix(distance_matrix)
+internal_validation <- clValid(distance_matrix, 2:7, 
+                               clMethods = c("agnes"),
+                               validation = "stability")
+summary(internal_validation)
+
 ```
 
-The dendogram indicates that the greatest distances between points exist if these are grouped in three clusters
+The dendogram indicates that the greatest distances between grpups exist if these are grouped in three clusters
 
 ```{r}
 clust_cuc_rare_hclust_tests <- eclust(df_cuc_rare_centr_clust,                       
@@ -148,20 +162,20 @@ df_cuc_rare$clusters <- as.factor(export_clus_rare)
 
 ```{r}
 library(lmPerm)
-model <- aovp(cbind(Al2O4_avg, SiO3_avg, Ca_avg, Ti_avg, Mn_avg, Fe_avg, Zn_avg, Rb_avg, Sr_avg, Zr_avg) ~ clusters,
+model <- aovp(cbind(SiO3_avg, Ca_avg, Ti_avg, Mn_avg, Fe_avg, Zn_avg, Rb_avg, Sr_avg, Zr_avg) ~ clusters,
              seqs = T,
              Ca = 1e-3,
-             maxIter = 1e7,
+             maxIter = 1e6,
              data = df_cuc_rare, 
              perm = "Prob")
 
 
 summary.aov(model)
 
-model3 <- aovp(Al2O4_avg + SiO3_avg + Ca_avg + Ti_avg + Mn_avg + Fe_avg + Zn_avg + Rb_avg + Sr_avg + Zr_avg ~ clusters,
+model3 <- aovp(SiO3_avg + Ca_avg + Ti_avg + Mn_avg + Fe_avg + Zn_avg + Rb_avg + Sr_avg + Zr_avg ~ clusters,
               seqs = TRUE,
               Ca = 1e-3,
-              maxIter = 1e7,
+              maxIter = 1e6,
                data = df_cuc_rare, 
                perm = "Prob")
 summary.aovp(model3)
@@ -172,18 +186,26 @@ summary.aovp(model3)
 #PCA
 
 ```{r}
-pca_cuc_rare <- PCA(df_cuc_rare[,3:12], graph = FALSE)
+df_pca <- full_join(df_cuc_rare, df_cuc_check_point) 
+df_pca$clusters <- coalesce(df_pca$clusters, "outlier")
+df_pca$clusters <- as.factor(df_pca$clusters)
+
+pca_cuc_rare <- PCA(df_pca[,3:11], ind.sup = 22:26, graph = FALSE)
 summary(pca_cuc_rare)
 
-fviz_pca_biplot(pca_cuc_rare, addEllipses = F, ellipse.level = 0.95,
-                                     col.ind = df_cuc_rare$clusters,                   
+plot_pca <- fviz_pca_biplot(pca_cuc_rare, addEllipses = F, ellipse.level = 0.95,
+                                     col.ind = df_cuc_rare$clusters,
+                                     geom.ind.sup = "text",
                                      geom.ind = "point",
                                      col.var = "black",                       
                                      repel = TRUE,                            
                                      title = "Overlay of clustering results over PCA",
                                      legend.title = "Clusters") + 
   geom_text(label = df_cuc_rare$TIP, hjust = 0.5, nudge_y = -0.05, check_overlap = TRUE) +
-  geom_text(label = df_cuc_rare$SAMPLE, hjust = 0.5, nudge_y = 0.05, nudge_x = -0.05, check_overlap = TRUE)
+  geom_text(label = df_cuc_rare$SAMPLE, hjust = 0.5, nudge_y = 0.05, nudge_x = -0.05, check_overlap = TRUE) +
+  scale_colour_viridis_d()
+
+plot_pca
 ```
 
 
@@ -191,7 +213,11 @@ fviz_pca_biplot(pca_cuc_rare, addEllipses = F, ellipse.level = 0.95,
 The distribution of the elemental ratio of Ti/Zr (titanium/zirconium) can be used to indicate heterogeneity of parent materials because they weather slowly and can retain the characteristics of parent materials. 
 
 ```{r}
-ggplot(df_cuc_rare, aes(x = Ti_avg, y = Zr_avg, color = clusters)) +
-  geom_point()
+ggplot(df_pca, aes(x = Ti_avg, y = Zr_avg, color = clusters)) +
+  geom_point(show.legend = T) +
+  geom_text(label = df_pca$TIP, hjust = 0.0005, nudge_y = -0.0005, check_overlap = TRUE, show.legend = F) +
+  geom_text(label = df_pca$SAMPLE, hjust = 0.0005, nudge_y = 0.0005, nudge_x = -0.0005, check_overlap = TRUE, show.legend = F)
+  
+
 ```
 
