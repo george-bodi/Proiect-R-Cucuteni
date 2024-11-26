@@ -28,6 +28,9 @@ library(cluster)
 library(fpc)
 library(tidyverse)
 library(psych)
+library(janitor)
+library(patchwork)
+library(viridis)
 
 set.seed(2024)
 theme_set(theme_light())
@@ -44,7 +47,11 @@ Remove from analysis the elements that are troublesome for quantitative analysis
 ```{r}
 df_cuc <- as.data.frame(Cucuteni_pXRF)
 df_cuc[,1:2] <- lapply(df_cuc[,1:2], as.factor)
-df_cuc_rare <- df_cuc[,c(1:4, 6:14)]
+df_cuc <- df_cuc |> 
+  unite("Proba_Tip", TIP:SAMPLE, sep = "_", remove = F) |> 
+  column_to_rownames("Proba_Tip") |> 
+  unite("Proba_Tip", TIP:SAMPLE, sep = "_", remove = F)
+df_cuc_rare <- df_cuc[,c(1:5, 7:15)]
 
 ```
 
@@ -52,14 +59,14 @@ df_cuc_rare <- df_cuc[,c(1:4, 6:14)]
 
 ```{r}
 library(GGally)
-ggpairs(df_cuc_rare, columns = 3:13)
+ggpairs(df_cuc_rare, columns = 4:14)
 
 ```
 
 Following EDA we will also eliminate Al due to its high correlation with Ti, Fe, and Zn, and K, due to its high correlation with Rubidium and Si. In this last case, we chose to eliminate K also due the possibility of contamination (Potassium per Frankel and Webb JAS 2012)
 
 ```{r}
-df_cuc_rare <- df_cuc_rare[, c(1:2, 4, 6:13)]
+df_cuc_rare <- df_cuc_rare[, -c(4,6)]
 df_cuc_check_point <- df_cuc_rare
 ```
 
@@ -71,7 +78,7 @@ df_cuc_check_point <- df_cuc_rare
 
 ```{r}
 library(dbscan)
-lof_scores <- dbscan::lof(scale(df_cuc_rare[,3:11], center = T, scale = T), minPts = 5)
+lof_scores <- dbscan::lof(scale(df_cuc_rare[,4:12], center = T, scale = T), minPts = 5)
 summary(lof_scores)
 df_cuc_rare$lof_scores <- lof_scores
 ggplot(df_cuc_rare, aes(x = 1:nrow(df_cuc_rare), y = lof_scores)) +
@@ -86,7 +93,7 @@ threshold <- 1.3
 df_cuc_rare$outlier <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
 df_cuc_rare_with_outliers <- df_cuc_rare
 df_cuc_rare <- filter(df_cuc_rare, !df_cuc_rare$outlier == "Outlier")
-ggpairs(df_cuc_rare, columns = 3:11)
+ggpairs(df_cuc_rare, columns = 4:12)
 
 ```
 
@@ -98,14 +105,10 @@ ggpairs(df_cuc_rare, columns = 3:11)
 gradient_col <- list(low = "black", mid = "white",high = "red")
 
 
-df_cuc_rare_centr_clust <- as.data.frame(scale(df_cuc_rare[,3:11],
+df_cuc_rare_centr_clust <- as.data.frame(scale(df_cuc_rare[,4:12],
                                                center = TRUE,
                                                scale = TRUE)
                                          )
-samples <- df_cuc_rare$SAMPLE
-rownames(df_cuc_rare_centr_clust) <- samples
-
-
 library(hopkins)
 hopkins::hopkins(df_cuc_rare_centr_clust, m = nrow(df_cuc_rare) - 2)
 
@@ -184,7 +187,7 @@ summary.aovp(model3)
 #PCA with clusters overlay
 
 ```{r}
-pca_cuc_rare <- PCA(df_cuc_rare[,3:11], graph = FALSE)
+pca_cuc_rare <- PCA(df_cuc_rare[,4:12], graph = FALSE, scale.unit = T)
 summary(pca_cuc_rare)
 
 plot_pca <- fviz_pca_biplot(pca_cuc_rare, addEllipses = T, ellipse.level = 0.90,
@@ -194,13 +197,187 @@ plot_pca <- fviz_pca_biplot(pca_cuc_rare, addEllipses = T, ellipse.level = 0.90,
                                      repel = TRUE,                            
                                      title = "Overlay of clustering results over PCA",
                                      legend.title = "Clusters") + 
-  geom_text(label = df_cuc_rare$TIP, hjust = 0.5, nudge_y = -0.05, check_overlap = TRUE) +
-  geom_text(label = df_cuc_rare$SAMPLE, hjust = 0.5, nudge_y = 0.05, nudge_x = -0.05, check_overlap = TRUE) +
+  geom_text(label = df_cuc_rare$TIP, hjust = 0.5, nudge_y = -0.09, check_overlap = TRUE) +
+  geom_text(label = df_cuc_rare$SAMPLE, hjust = 0.5, nudge_y = 0.09, nudge_x = -0.09, check_overlap = TRUE) +
   scale_colour_viridis_d()
 
 plot_pca
 ```
 
+######PCA - visualisations - eigen values
+```{r}
+eigen_values <- pca_cuc_rare$eig |> 
+  as_tibble() |> 
+  rownames_to_column() |> 
+    janitor::clean_names() |> 
+  arrange(desc(percentage_of_variance)) 
+
+
+graph_eigen <- eigen_values |> 
+    #top_n(4, percentage_of_variance) |>
+  mutate(percentage_of_variance = round(percentage_of_variance, 2)) |> 
+  ggplot(aes(rowname, percentage_of_variance)) +
+  geom_col() +
+  geom_text(aes(label = percentage_of_variance, vjust = 1.5,
+              )) +
+  xlab(label = "Principal Components") +
+  ylab(label = "Percentage of Variance Explained") +
+  labs(title = "Explanatory Power of the Identified Principal Components")
+graph_eigen
+```
+
+######PCA - visualisations - variables
+```{r}
+contrib_var_selection <- pca_cuc_rare$var$contrib |> 
+  as.data.frame() |> 
+  rownames_to_column() |> 
+  mutate_if(is.character, as.factor) 
+
+graph_dim1_contrib <- 
+  contrib_var_selection |> 
+  mutate(rowname = fct_reorder(rowname, Dim.1)) |> 
+  ggplot(aes(Dim.1, rowname)) +
+  geom_col() +
+  xlab(label = "Contribution of species to PC 1") +
+  ylab(label = "")
+
+
+graph_dim2_contrib <- 
+  contrib_var_selection |> 
+  mutate(rowname = fct_reorder(rowname, Dim.2)) |> 
+  ggplot(aes(Dim.2, rowname)) +
+  geom_col() +
+  xlab(label = "Contribution of species to PC 2") +
+  ylab(label = "")
+
+
+graph_dim3_contrib <- 
+  contrib_var_selection |> 
+  mutate(rowname = fct_reorder(rowname, Dim.3)) |> 
+  ggplot(aes(Dim.3, rowname)) +
+  geom_col() +
+  xlab(label = "Contribution of species to PC 3") +
+  ylab(label = "")
+
+cors_var <- pca_cuc_rare$var$cor |> 
+  as.data.frame() |> 
+  rownames_to_column() |> 
+  mutate_if(is.character, as.factor) 
+
+graph_dim1_cors <- 
+  cors_var |> 
+  mutate(rowname = fct_reorder(rowname, Dim.1, .desc = T)) |> 
+  ggplot(aes(Dim.1, rowname)) +
+  geom_col() +
+  theme(axis.text = element_text(size = 9, face = "bold"),
+        axis.title = element_text(face = "bold")
+        ) + 
+  xlab(label = "Correlation of species to the first principal component") +
+  ylab(label = "") +
+  inset_element(graph_dim1_contrib,
+                left = 0.70,
+                bottom = 0.5,
+                right = 1,
+                top = 1)
+
+graph_dim2_cors <- 
+  cors_var |> 
+  mutate(rowname = fct_reorder(rowname, Dim.2, .desc = T)) |> 
+  ggplot(aes(Dim.2, rowname)) +
+  geom_col() +
+  theme(axis.title = element_text(face = "bold"),
+        axis.text = element_text(size = 9, face = "bold")
+        ) + 
+  xlab(label = "Correlation of species to the second principal component") +
+  ylab(label = "") +
+  inset_element(graph_dim2_contrib,
+                left = 0.70,
+                bottom = 0.5,
+                right = 1,
+                top = 1)
+
+
+graph_dim3_cors <- 
+  cors_var |> 
+  mutate(rowname = fct_reorder(rowname, Dim.3, .desc = T)) |> 
+  ggplot(aes(Dim.3, rowname)) +
+  geom_col() +
+  theme(axis.title = element_text(face = "bold"),
+        axis.text = element_text(size = 9, face = "bold")
+        ) + 
+  xlab(label = "Correlation of species to the third principal component") +
+  ylab(label = "") +
+  inset_element(graph_dim3_contrib,
+                left = 0.70,
+                bottom = 0.45,
+                right = 1,
+                top = 1)
+```
+
+######PCA - visualisations - cases
+```{r}
+coord_ind <- 
+  pca_cuc_rare$ind$coord |> 
+  as.data.frame() |> 
+  mutate_if(is.character, as.factor) |> 
+  rownames_to_column() |> 
+  as_tibble() |> 
+  separate_wider_delim(rowname, delim = "_", 
+                       names = c("Tip", "Proba", "Numar"),
+                       cols_remove = F)
+
+graph_ind_1 <- coord_ind |> 
+  mutate(rowname = fct_reorder(rowname, Dim.1, .desc = T)) |> 
+  ggplot(aes(Dim.1, rowname)) +
+  geom_col(aes(colour = df_cuc_rare$clusters, fill = df_cuc_rare$clusters)) +
+  theme(legend.position = "inside",
+    legend.position.inside = c(1,1),
+    legend.justification.inside = c(1,1),
+    axis.text = element_text(size = 9, face = "bold"),
+    axis.title = element_text(face = "bold")
+    ) + 
+  xlab(label =  "The sites' positioning in relation to the first principal component") + 
+  ylab(label =  "Sites") +
+  scale_fill_viridis(discrete = T) +
+  scale_color_viridis_d()
+
+graph_ind_2 <- coord_ind |> 
+  mutate(rowname = fct_reorder(rowname, Dim.2, .desc = T)) |> 
+  ggplot(aes(Dim.2, rowname)) +
+  geom_col(aes(colour = df_cuc_rare$clusters, fill = df_cuc_rare$clusters)) +
+  theme(legend.position = "inside",
+    legend.position.inside = c(1,1),
+    legend.justification.inside = c(1,1),
+    axis.text = element_text(size = 9, face = "bold"),
+    axis.title = element_text(face = "bold")
+    ) + 
+  xlab(label =  "The sites' positioning in relation to the second principal component") + 
+  ylab(label =  "Sites") +
+  scale_fill_viridis(discrete = T) +
+  scale_color_viridis_d()
+
+graph_ind_3 <- coord_ind |> 
+  mutate(rowname = fct_reorder(rowname, Dim.3, .desc = T)) |> 
+  ggplot(aes(Dim.3, rowname)) +
+  geom_col(aes(colour = df_cuc_rare$clusters, fill = df_cuc_rare$clusters)) +
+  theme(legend.position = "inside",
+    legend.position.inside = c(1,1),
+    legend.justification.inside = c(1,1),
+    axis.text = element_text(size = 9, face = "bold"),
+    axis.title = element_text(face = "bold")
+    ) + 
+  xlab(label =  "The sites' positioning in relation to the third principal component") + 
+  ylab(label =  "Sites") +
+  scale_fill_viridis(discrete = T) +
+  scale_color_viridis_d()
+```
+
+PCA - bring it home
+```{r}
+graph_dim1_cors / graph_ind_1 
+graph_dim2_cors / graph_ind_2 
+graph_dim3_cors / graph_ind_3 
+```
 
 # Biplot of Ti vs Zr
 The distribution of the elemental ratio of Ti/Zr (titanium/zirconium) can be used to indicate heterogeneity of parent materials because they weather slowly and can retain the characteristics of parent materials (Encyclopedia of Soils in the Environment). 
