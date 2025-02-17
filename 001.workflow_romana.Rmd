@@ -1,0 +1,461 @@
+---
+title: "in romana"
+output:
+  html_document: default
+  word_document: default
+date: "2024-11-26"
+---
+
+---
+title: "workflow"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+date: "2024-08-09"
+---
+
+```{r setup, include=FALSE}
+library(readxl)
+library(FactoMineR)
+library(factoextra)
+library(NbClust)
+library(rgl)
+library(pixiedust)
+library(multcomp)
+library(car)
+library(nlme)
+library(psych)
+library(corrplot)
+library(htmlwidgets)
+library(MASS)
+library(effectsize)
+library(cluster)
+library(fpc)
+library(tidyverse)
+library(psych)
+library(janitor)
+library(patchwork)
+library(viridis)
+library(stargazer)
+
+set.seed(2024)
+theme_set(theme_light())
+
+Cucuteni_pXRF <- read_excel("C:/Users/georg/OneDrive/Proiecte_R/Proiect-R-Cucuteni/Cucuteni_pXRF.xlsx", sheet = "toate fara 15 RSD>10")
+```
+
+#Data Selection
+##Removing variables
+
+
+Remove from analysis the elements that are troublesome for quantitative analysis (Phosphorus per Hunt & Speakman 2015 JAS 53)
+
+```{r}
+df_cuc <- as.data.frame(Cucuteni_pXRF)
+df_cuc[,1:2] <- lapply(df_cuc[,1:2], as.factor)
+df_cuc <- df_cuc |> 
+  unite("Proba_Tip", TIP:SAMPLE, sep = "_", remove = F) |> 
+  column_to_rownames("Proba_Tip") |> 
+  unite("Proba_Tip", TIP:SAMPLE, sep = "_", remove = F)
+df_cuc_rare <- df_cuc[,c(1:5, 7:15)]
+df_cuc_check_point <- df_cuc_rare
+
+```
+
+#EDA
+
+```{r}
+ggpairs(df_cuc_rare, columns = 4:14) +
+  ggtitle("Grafic 1. Analiza Exploratorie")
+  
+
+```
+
+#Data Selection
+##Removing individuals
+###Multivariate Outlier Analysis and Elimination using Local Outlier Factor
+
+
+```{r}
+library(dbscan)
+lof_scores <- dbscan::lof(scale(df_cuc_rare[,4:14], center = T, scale = T), minPts = 6)
+summary(lof_scores)
+df_cuc_rare$lof_scores <- lof_scores
+ggplot(df_cuc_rare, aes(x = 1:nrow(df_cuc_rare), y = lof_scores)) +
+  geom_point() + 
+  geom_text(aes(label = Proba_Tip)) +
+  theme_light() +
+  xlab(label = "") +
+  ylab(label = "Scorul Densității Locale") +
+  ggtitle("Grafic 2. Identificarea valorilor extreme")
+
+hist(lof_scores, breaks = 30)
+```
+From the graph it is clear that samples 01, 16, 17, are outliers and will be removed from the analysis as they may impact the clustering results
+
+```{r}
+threshold <- 1.4
+df_cuc_rare$outlier <- ifelse(lof_scores > threshold, "Valori Extreme", "Inlier")
+df_cuc_rare_with_outliers <- df_cuc_rare
+df_cuc_rare <- filter(df_cuc_rare, !df_cuc_rare$outlier == "Valori Extreme")
+ggpairs(df_cuc_rare, columns = 4:14) +
+  ggtitle("Grafic 3. Analiza Exploratorie după eliminarea valorilor extreme")
+
+```
+
+#Clustering
+
+##Calculate clustering tendency
+
+```{r}
+gradient_col <- list(low = "black", mid = "white",high = "red")
+
+
+df_cuc_rare_centr_clust <- as.data.frame(scale(df_cuc_rare[,4:14],
+                                               center = TRUE,
+                                               scale = TRUE)
+                                         )
+library(hopkins)
+hopkins::hopkins(df_cuc_rare_centr_clust, m = nrow(df_cuc_rare_centr_clust) - 2)
+
+fviz_dist(dist(df_cuc_rare_centr_clust), show_labels = T) +
+  labs(title = "Grafic 4. Tendințe de grupare",
+       subtitle = "Indice Hopkins: 0.819553") 
+  
+```
+
+##Agglomerative Hierachical Clustering
+
+```{r}
+clust_cuc_rare_hclust_indet <- eclust(df_cuc_rare_centr_clust,                       
+                                      FUNcluster = "agnes",             
+                                      hc_metric = "minkowski",         
+                                      hc_method = "ward.D2")           
+clusts_indet <- fviz_dend(clust_cuc_rare_hclust_indet) +
+  ggtitle("Grafic 5. Dendrograma clusterelor")
+clusts_indet
+
+library(clValid)
+distance_matrix <- distance(df_cuc_rare_centr_clust)
+distance_matrix <- as.matrix(distance_matrix)
+internal_validation <- clValid(distance_matrix, 2:8, 
+                               clMethods = c("agnes"),
+                               validation = c("internal", "stability"))
+summary(internal_validation)
+```
+
+The dendrogram indicates that the greatest distances between grpups exist if these are grouped in three clusters
+
+```{r}
+clust_cuc_rare_2 <- eclust(df_cuc_rare_centr_clust,                       
+                                      FUNcluster = "agnes",             
+                                      k = 2,      
+                                      hc_metric = "minkowski",         
+                                      hc_method = "ward.D2")           
+
+silh_2_clusts <- fviz_silhouette(clust_cuc_rare_2) +
+  labs(title = "Gafic 6. Indicele siluetei pentru partiționări în clustere",
+       subtitle = "Partiționare in două clustere. Indicele mediu al siluetei: 0,25")
+clusts_tests_2 <- fviz_dend(clust_cuc_rare_2, rect = T, rect_fill = T)
+clusts_tests_2
+
+clust_cuc_rare_4 <- eclust(df_cuc_rare_centr_clust,                       
+                                      FUNcluster = "agnes",             
+                                      k = 4,      
+                                      hc_metric = "minkowski",         
+                                      hc_method = "ward.D2")           
+
+silh_4_clusts <- fviz_silhouette(clust_cuc_rare_4) +
+  labs(title = "",
+    subtitle = "Partiționare în patru clustere. Indicele mediu al siluetei: 0,28")
+
+silh_2_clusts / silh_4_clusts
+
+clusts_tests_4 <- fviz_dend(clust_cuc_rare_4, rect = T, rect_fill = T)
+clusts_tests_4
+
+```
+
+The silhouette index is low, therefore further verification of clustering accuracy is necessary
+
+Completion of data with the cluster assignments
+
+```{r}
+export_clus_rare_2 <- clust_cuc_rare_2$cluster
+df_cuc_rare$clusters_2 <- as.factor(export_clus_rare_2)
+export_clus_rare_4 <- clust_cuc_rare_4$cluster
+df_cuc_rare$clusters_4 <- as.factor(export_clus_rare_4)
+```
+
+
+#Permutation test for linear model
+
+```{r}
+library(lmPerm)
+
+model_2_clusters <- aovp(Al2O4_avg + SiO3_avg + K2O_avg + Ca_avg + Ti_avg + Mn_avg + Fe_avg + Zn_avg + Rb_avg + Sr_avg + Zr_avg ~ clusters_2,
+              seqs = F,
+              maxIter = 1e6,
+              data = df_cuc_rare, 
+              perm = "Exact")
+summary.aovp(model_2_clusters)
+
+model_4_clusters <- aovp(Al2O4_avg + SiO3_avg + K2O_avg + Ca_avg + Ti_avg + Mn_avg + Fe_avg + Zn_avg + Rb_avg + Sr_avg + Zr_avg ~ clusters_4,
+              seqs = F,
+              maxIter = 1e6,
+              data = df_cuc_rare, 
+              perm = "Exact")
+summary.aovp(model_4_clusters)
+
+
+
+model_2_elements <- aovp(cbind(Al2O4_avg, SiO3_avg, K2O_avg, Ca_avg, Ti_avg, Mn_avg, Fe_avg, Zn_avg, Rb_avg, Sr_avg, Zr_avg) ~ clusters_2,
+             seqs = F,
+             maxIter = 1e6,
+             data = df_cuc_rare, 
+             perm = "Exact")
+summary.aovp(model_2_elements)
+
+model_4_elements <- aovp(cbind(Al2O4_avg, SiO3_avg, K2O_avg, Ca_avg, Ti_avg, Mn_avg, Fe_avg, Zn_avg, Rb_avg, Sr_avg, Zr_avg) ~ clusters_4,
+             seqs = F,
+             maxIter = 1e6,
+             data = df_cuc_rare, 
+             perm = "Exact")
+summary.aovp(model_4_elements)
+```
+
+
+
+#PCA with clusters overlay
+
+```{r}
+pca_cuc_rare <- PCA(df_cuc_rare[,4:14], graph = FALSE, scale.unit = T)
+summary(pca_cuc_rare)
+
+plot_pca <- fviz_pca_biplot(pca_cuc_rare, addEllipses = F, ellipse.level = 0.90,
+                                     col.ind = df_cuc_rare$clusters_4,
+                                     geom.ind = "point",
+                                     col.var = "black",                       
+                                     repel = TRUE,                            
+                                     title = "Grafic 8. Biplot CP 1 & CP 2 cu indicarea clusterelor",
+                                     legend.title = "Clustere") + 
+  geom_text(label = df_cuc_rare$TIP, hjust = 0.5, nudge_y = -0.09, check_overlap = TRUE) +
+  geom_text(label = df_cuc_rare$SAMPLE, hjust = 0.5, nudge_y = 0.09, nudge_x = -0.09, check_overlap = TRUE) +
+  scale_colour_viridis_d()
+
+plot_pca
+```
+
+######PCA - visualisations - eigen values
+```{r}
+eigen_values <- pca_cuc_rare$eig |> 
+  as_tibble() |> 
+  rownames_to_column() |> 
+    janitor::clean_names() |> 
+  arrange(desc(percentage_of_variance)) 
+
+
+graph_eigen <- eigen_values |> 
+    top_n(8, percentage_of_variance) |>
+  mutate(percentage_of_variance = round(percentage_of_variance, 2)) |> 
+  ggplot(aes(rowname, percentage_of_variance)) +
+  geom_col() +
+  geom_text(aes(label = percentage_of_variance, vjust = 1.5,
+              )) +
+  xlab(label = "Componente Principale") +
+  ylab(label = "Procentajul variației Explicate") +
+  labs(title = "Grafic 7. Puterea de explicație a Componentelor Principale Identificate")
+graph_eigen
+```
+
+######PCA - visualisations - variables
+```{r}
+contrib_var_selection <- pca_cuc_rare$var$contrib |> 
+  as.data.frame() |> 
+  rownames_to_column() |> 
+  mutate_if(is.character, as.factor) 
+
+graph_dim1_contrib <- 
+  contrib_var_selection |> 
+  mutate(rowname = fct_reorder(rowname, Dim.1)) |> 
+  ggplot(aes(Dim.1, rowname)) +
+  geom_col() +
+  xlab(label = "Contribuții la CP 1") +
+  ylab(label = "")
+
+
+graph_dim2_contrib <- 
+  contrib_var_selection |> 
+  mutate(rowname = fct_reorder(rowname, Dim.2)) |> 
+  ggplot(aes(Dim.2, rowname)) +
+  geom_col() +
+  xlab(label = "Contribuții la CP 2") +
+  ylab(label = "")
+
+
+graph_dim3_contrib <- 
+  contrib_var_selection |> 
+  mutate(rowname = fct_reorder(rowname, Dim.3)) |> 
+  ggplot(aes(Dim.3, rowname)) +
+  geom_col() +
+  xlab(label = "Contribuții la CP 3") +
+  ylab(label = "")
+
+cors_var <- pca_cuc_rare$var$cor |> 
+  as.data.frame() |> 
+  rownames_to_column() |> 
+  mutate_if(is.character, as.factor) 
+
+graph_dim1_cors <- 
+  cors_var |> 
+  mutate(rowname = fct_reorder(rowname, Dim.1, .desc = T)) |> 
+  ggplot(aes(Dim.1, rowname)) +
+  geom_col() +
+  theme(axis.text = element_text(size = 9, face = "bold"),
+        axis.title = element_text(face = "bold")
+        ) + 
+  xlab(label = "Corelația Elementelor cu CP 1") +
+  ylab(label = "") +
+  inset_element(graph_dim1_contrib,
+                left = 0.8,
+                bottom = 0.5,
+                right = 1,
+                top = 1)
+
+graph_dim2_cors <- 
+  cors_var |> 
+  mutate(rowname = fct_reorder(rowname, Dim.2, .desc = T)) |> 
+  ggplot(aes(Dim.2, rowname)) +
+  geom_col() +
+  theme(axis.title = element_text(face = "bold"),
+        axis.text = element_text(size = 9, face = "bold")
+        ) + 
+  xlab(label = "Corelația Elementelor cu CP 2") +
+  ylab(label = "") +
+  inset_element(graph_dim2_contrib,
+                left = 0.8,
+                bottom = 0.5,
+                right = 1,
+                top = 1)
+
+
+graph_dim3_cors <- 
+  cors_var |> 
+  mutate(rowname = fct_reorder(rowname, Dim.3, .desc = T)) |> 
+  ggplot(aes(Dim.3, rowname)) +
+  geom_col() +
+  theme(axis.title = element_text(face = "bold"),
+        axis.text = element_text(size = 9, face = "bold")
+        ) + 
+  xlab(label = "Corelația Elementelor cu CP 3") +
+  ylab(label = "") +
+  inset_element(graph_dim3_contrib,
+                left = 0.8,
+                bottom = 0.5,
+                right = 1,
+                top = 1)
+```
+
+######PCA - visualisations - cases
+```{r}
+coord_ind <- 
+  pca_cuc_rare$ind$coord |> 
+  as.data.frame() |> 
+  mutate_if(is.character, as.factor) |> 
+  rownames_to_column() |> 
+  as_tibble() |> 
+  separate_wider_delim(rowname, delim = "_", 
+                       names = c("Tip", "Proba", "Numar"),
+                       cols_remove = F)
+
+graph_ind_1 <- coord_ind |> 
+  mutate(rowname = fct_reorder(rowname, Dim.1, .desc = T)) |> 
+  ggplot(aes(Dim.1, rowname)) +
+  geom_col(aes(colour = df_cuc_rare$clusters, fill = df_cuc_rare$clusters_4)) +
+  theme(legend.position = "inside",
+    legend.position.inside = c(1,1),
+    legend.justification.inside = c(1,1),
+    axis.text = element_text(size = 9, face = "bold"),
+    axis.title = element_text(face = "bold")
+    ) + 
+  xlab(label =  "Corelația Probelor cu CP 1") + 
+  ylab(label =  "Probe") +
+  scale_fill_viridis(discrete = T) +
+  scale_color_viridis_d() +
+  guides(fill = guide_legend(title = "Clustere")) +
+  guides(color = F)
+
+graph_ind_2 <- coord_ind |> 
+  mutate(rowname = fct_reorder(rowname, Dim.2, .desc = T)) |> 
+  ggplot(aes(Dim.2, rowname)) +
+  geom_col(aes(colour = df_cuc_rare$clusters_4, fill = df_cuc_rare$clusters_4)) +
+  theme(legend.position = "inside",
+    legend.position.inside = c(1,1),
+    legend.justification.inside = c(1,1),
+    axis.text = element_text(size = 9, face = "bold"),
+    axis.title = element_text(face = "bold")
+    ) + 
+  xlab(label =  "Corelația Probelor cu CP 2") + 
+  ylab(label =  "Probe") +
+  scale_fill_viridis(discrete = T) +
+  scale_color_viridis_d() +
+  guides(fill = guide_legend(title = "Clustere")) +
+  guides(color = F)
+
+graph_ind_3 <- coord_ind |> 
+  mutate(rowname = fct_reorder(rowname, Dim.3, .desc = T)) |> 
+  ggplot(aes(Dim.3, rowname)) +
+  geom_col(aes(colour = df_cuc_rare$clusters_4, fill = df_cuc_rare$clusters_4)) +
+  theme(legend.position = "inside",
+    legend.position.inside = c(1,1),
+    legend.justification.inside = c(1,1),
+    axis.text = element_text(size = 9, face = "bold"),
+    axis.title = element_text(face = "bold")
+    ) + 
+  xlab(label =  "Corelația Probelor cu CP 3") + 
+  ylab(label =  "Probe") +
+  scale_fill_viridis(discrete = T) +
+  scale_color_viridis_d() +
+  guides(fill = guide_legend(title = "Clustere")) +
+  guides(color = F)
+```
+
+PCA - bring it home
+```{r}
+graph_CP1 <- graph_dim1_cors / graph_ind_1 +
+  plot_annotation(title = "Grafic 9. Definirea clusterelor în funcție de CP 1")
+graph_CP2 <- graph_dim2_cors / graph_ind_2 +
+  plot_annotation(title = "Grafic 10. Definirea clusterelor în funcție de CP 2")
+graph_CP3 <- graph_dim3_cors / graph_ind_3 +
+  plot_annotation(title = "Grafic 11. Definirea clusterelor în funcție de CP 3")
+graph_CP1
+graph_CP2
+graph_CP3
+```
+
+The first component defines the difference between fine and coarse pottery and between clusters 4&2 and 1&3
+
+The second component defines the difference between the clusters 2&4, and is probably expressing differences in the raw materials.
+
+
+
+
+# Biplot of Ti vs Zr
+The distribution of the elemental ratio of Ti/Zr (titanium/zirconium) can be used to indicate heterogeneity of parent materials because they weather slowly and can retain the characteristics of parent materials (Encyclopedia of Soils in the Environment). 
+
+```{r}
+df_pca <- full_join(df_cuc_rare, df_cuc_check_point) 
+df_pca$clusters_4 <- coalesce(df_pca$clusters_4, "Valori Extreme")
+df_pca$clusters <- as.factor(df_pca$clusters_4)
+
+ggplot(df_pca, aes(x = Ti_avg, y = Zr_avg, color = clusters_4)) +
+  geom_point(show.legend = T) +
+  geom_text(label = df_pca$Proba_Tip, hjust = 0.0005, nudge_y = -0.0005, check_overlap = TRUE, show.legend = F) +
+    labs(colour = "Legenda",
+         title = "Grafic 12. Exprimare grafcă a raportului Zr/Ti") +
+  scale_color_viridis_d()
+  
+
+```
